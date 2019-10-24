@@ -8,11 +8,11 @@ import math
 import os
 import re
 import requests
+import struct
 import threading
 import time
 import types
 from bilibili import Bilibili
-from PIL import Image
 
 def log(message):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
@@ -35,32 +35,26 @@ def read_in_chunks(file_name, chunk_size=1024 * 1024):
             else:
                 return
 
-def image_dump(data, file_name):
-    merged_data = data + b"\xff"
-    pixel_number = math.ceil(len(merged_data) / 3)
-    width =  math.ceil(math.sqrt(pixel_number))
-    height = math.ceil(pixel_number / width)
-    image = Image.new("RGB", (width, height))
-    image_data = [[]]
-    for byte in merged_data:
-        if len(image_data[-1]) == 3:
-            image_data[-1] = tuple(image_data[-1])
-            image_data.append([])
-        image_data[-1].append(byte)
-    image_data[-1] = tuple(image_data[-1] + [0] * (3 - len(image_data[-1])))
-    image.putdata(image_data)
-    image.save(file_name)
+def bmp_header(data):
+    return b"BM" \
+        + struct.pack("<l", 14 + 40 + 8 + len(data)) \
+        + b"\x00\x00" \
+        + b"\x00\x00" \
+        + b"\x3e\x00\x00\x00" \
+        + b"\x28\x00\x00\x00" \
+        + struct.pack("<l", len(data)) \
+        + b"\x01\x00\x00\x00" \
+        + b"\x01\x00" \
+        + b"\x01\x00" \
+        + b"\x00\x00\x00\x00" \
+        + struct.pack("<l", math.ceil(len(data) / 8)) \
+        + b"\x00\x00\x00\x00" \
+        + b"\x00\x00\x00\x00" \
+        + b"\x00\x00\x00\x00" \
+        + b"\x00\x00\x00\x00" \
+        + b"\x00\x00\x00\x00\xff\xff\xff\x00"
 
-def image_load(file_name):
-    image = Image.open(file_name)
-    merged_data = b"".join(bytes(pixel_data) for pixel_data in image.getdata())
-    merged_data = merged_data.rstrip(b"\x00")
-    if merged_data[-1] == 255:
-        return merged_data[:-1]
-    else:
-        return b""
-
-def image_upload(file_name, cookies):
+def image_upload(data, cookies):
     url = "https://api.vc.bilibili.com/api/v1/drawImage/upload"
     headers = {
         'Origin': "https://t.bilibili.com",
@@ -68,46 +62,29 @@ def image_upload(file_name, cookies):
         'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36",
     }
     files = {
-        'file_up': (file_name, open(file_name, "rb")),
+        'file_up': (f"{int(time.time() * 1000)}.bmp", data),
         'biz': "draw",
         'category': "daily",
     }
     response = requests.post(url, headers=headers, cookies=cookies, files=files).json()
     return response
 
-def image_download(url, file_name=None):
-    if file_name is None:
-        file_name = url.split("/")[-1]
-    with open(file_name, "wb") as f:
-        response = requests.get(url, stream=True)
-        length = response.headers.get("content-length")
-        if length:
-            length = int(length)
-            receive = 0
-            for data in response.iter_content(chunk_size=100 * 1024):
-                f.write(data)
-                receive += len(data)
-                # percent = receive / length
-                # print(f"\r{file_name} [{'=' * int(50 * percent)}{' ' * (50 - int(50 * percent))}] {percent:.0%}", end="", flush=True)
-            # print()
-        else:
-            f.write(response.content)
-    return file_name
+def image_download(url):
+    response = requests.get(url)
+    return response.content
 
 def fetch_meta(string):
     if string.startswith("http://") or string.startswith("https://"):
-        meta_file_name = image_download(string)
+        full_meta = image_download(string)
     elif re.match(r"^[a-fA-F0-9]{40}$", string):
-        meta_file_name = image_download(f"http://i0.hdslb.com/bfs/album/{string}.png")
+        full_meta = image_download(f"http://i0.hdslb.com/bfs/album/{string}.x-ms-bmp")
     else:
-        meta_file_name = string
+        return None
     try:
-        meta_data = json.loads(image_load(meta_file_name).decode("utf-8"))
-        return meta_data
+        meta_dict = json.loads(full_meta[62:].decode("utf-8"))
+        return meta_dict
     except:
         return None
-    finally:
-        os.remove(meta_file_name)
 
 def login_handle(args):
     bilibili = Bilibili()
@@ -117,41 +94,41 @@ def login_handle(args):
         f.write(json.dumps(bilibili.get_cookies(), ensure_ascii=False, indent=2))
 
 def info_handle(args):
-    meta_data = fetch_meta(args.meta)
-    if meta_data:
-        log(f"文件名: {meta_data['filename']}")
-        log(f"大小: {meta_data['size'] / 1024 / 1024:.2f} MB")
-        log(f"SHA-1: {meta_data['sha1']}")
-        log(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_data['time']))}")
-        log(f"分块数: {len(meta_data['block'])}")
-        for index, block in enumerate(meta_data['block']):
-            log(f"分块{index} ({block['size'] / 1024 / 1024:.2f} MB) URL: {block['url']}")
+    meta_dict = fetch_meta(args.meta)
+    if meta_dict:
+        log(f"文件名: {meta_dict['filename']}")
+        log(f"大小: {meta_dict['size'] / 1024 / 1024:.2f} MB")
+        log(f"SHA-1: {meta_dict['sha1']}")
+        log(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+        log(f"分块数: {len(meta_dict['block'])}")
+        for index, block_dict in enumerate(meta_dict['block']):
+            log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) URL: {block_dict['url']}")
     else:
         log("元数据解析出错")
 
 def upload_handle(args):
     def core(index, block):
-        block_file_name = f"{sha1}_{index}.png"
-        image_dump(block, block_file_name)
-        block_sha1 = calc_sha1(read_in_chunks(block_file_name), hexdigest=True)
-        url = skippable(block_sha1)
+        block_sha1 = calc_sha1(block, hexdigest=True)
+        full_block = bmp_header(block) + block
+        full_block_sha1 = calc_sha1(full_block, hexdigest=True)
+        url = skippable(full_block_sha1)
         if url:
-            log(f"分块{index} ({os.path.getsize(block_file_name) / 1024 / 1024:.2f} MB) 已存在于服务器")
+            log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已存在于服务器")
             block_dict[index] = {
                 'url': url,
-                'size': os.path.getsize(block_file_name),
+                'size': len(block),
                 'sha1': block_sha1,
             }
             done_flag.release()
         else:
             for _ in range(3):
-                response = image_upload(block_file_name, cookies)
+                response = image_upload(full_block, cookies)
                 if response['code'] == 0:
                     url = response['data']['image_url']
-                    log(f"分块{index} ({os.path.getsize(block_file_name) / 1024 / 1024:.2f} MB) 已上传")
+                    log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已上传")
                     block_dict[index] = {
                         'url': url,
-                        'size': os.path.getsize(block_file_name),
+                        'size': len(block),
                         'sha1': block_sha1,
                     }
                     done_flag.release()
@@ -162,17 +139,17 @@ def upload_handle(args):
                     break
             else:
                 terminate_flag.set()
-                log(f"分块{index} ({os.path.getsize(block_file_name) / 1024 / 1024:.2f} MB) 上传失败, 服务器返回{response}")
-        os.remove(block_file_name)
+                log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 上传失败, 服务器返回{response}")
 
     def skippable(sha1):
-        url = f"http://i0.hdslb.com/bfs/album/{sha1}.png"
+        url = f"http://i0.hdslb.com/bfs/album/{sha1}.x-ms-bmp"
         response = requests.head(url)
         return url if response.status_code == 200 else None
 
     done_flag = threading.Semaphore(0)
     terminate_flag = threading.Event()
     thread_pool = []
+    block_dict = {}
     start_time = time.time()
     try:
         with open(args.cookies_file, "r", encoding="utf-8") as f:
@@ -181,12 +158,11 @@ def upload_handle(args):
         log("Cookies加载失败, 请先登录")
         return None
     file_name = args.file
-    block_dict = {}
-    log(f"上传: {file_name} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
+    log(f"上传: {os.path.basename(file_name)} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
     sha1 = calc_sha1(read_in_chunks(file_name), hexdigest=True)
     log(f"SHA-1: {sha1}")
     log(f"线程数: {args.thread}")
-    for index, block in enumerate(read_in_chunks(file_name, chunk_size=args.block_size * 1024 * 1024 - 1)):
+    for index, block in enumerate(read_in_chunks(file_name, chunk_size=args.block_size * 1024 * 1024)):
         if len(thread_pool) >= args.thread:
             done_flag.acquire()
         if not terminate_flag.is_set():
@@ -198,68 +174,78 @@ def upload_handle(args):
         thread.join()
     if terminate_flag.is_set():
         return None
-    meta_data = {
+    meta_dict = {
         'time': int(time.time()),
-        'filename': file_name,
+        'filename': os.path.basename(file_name),
         'size': os.path.getsize(file_name),
         'sha1': sha1,
         'block': [block_dict[i] for i in range(len(block_dict))],
     }
-    meta_file_name = f"{sha1}_meta.png"
-    image_dump(json.dumps(meta_data, ensure_ascii=False).encode("utf-8"), meta_file_name)
+    meta = json.dumps(meta_dict, ensure_ascii=False).encode("utf-8")
+    full_meta = bmp_header(meta) + meta
     for _ in range(3):
-        response = image_upload(meta_file_name, cookies)
+        response = image_upload(full_meta, cookies)
         if response['code'] == 0:
             url = response['data']['image_url']
             log("元数据已上传")
-            os.remove(meta_file_name)
-            log(f"{file_name}上传完毕, 共有{index + 1}个分块, 耗时{int(time.time() - start_time)}秒")
-            log(f"META: {re.findall(r'[a-fA-F0-9]{40}', url)[0] if re.match(r'^http(s?)://i0.hdslb.com/bfs/album/[a-fA-F0-9]{40}.png$', url) else url}")
+            log(f"{os.path.basename(file_name)}上传完毕, 共有{len(meta_dict['block'])}个分块, 用时{int(time.time() - start_time)}秒, 平均速度{meta_dict['size'] / 1024 / 1024 / (time.time() - start_time):.2f} MB/s")
+            log(f"META: {re.findall(r'[a-fA-F0-9]{40}', url)[0] if re.match(r'^http(s?)://i0.hdslb.com/bfs/album/[a-fA-F0-9]{40}.x-ms-bmp$', url) else url}")
             return url
     else:
-        log(f"元数据上传失败, 保留文件{meta_file_name}, 服务器返回{response}")
-        return meta_file_name
+        log(f"元数据上传失败, 服务器返回{response}")
+        return None
 
 def download_handle(args):
-    def core(index, block):
-        block_file_name = f"{meta_data['sha1']}_{index}.png"
-        if os.path.exists(block_file_name) and calc_sha1(read_in_chunks(block_file_name), hexdigest=True) == block['sha1']:
-            log(f"分块{index} ({os.path.getsize(block_file_name) / 1024 / 1024:.2f} MB) 已存在于本地")
-            block_file_name_dict[index] = block_file_name
-            done_flag.release()
+    def core(index, block_dict, f):
+        for _ in range(3):
+            block = image_download(block_dict['url'])[62:]
+            if calc_sha1(block, hexdigest=True) == block_dict['sha1']:
+                f.seek(block_offset(index))
+                f.write(block)
+                log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 已下载")
+                done_flag.release()
+                break
         else:
-            for _ in range(3):
-                image_download(block['url'], file_name=block_file_name)
-                if calc_sha1(read_in_chunks(block_file_name), hexdigest=True) == block['sha1']:
-                    log(f"分块{index} ({os.path.getsize(block_file_name) / 1024 / 1024:.2f} MB) 已下载")
-                    block_file_name_dict[index] = block_file_name
-                    done_flag.release()
-                    break
-            else:
-                terminate_flag.set()
-                log(f"分块{index}校验未通过, SHA-1与元数据中的记录{block['sha1']}不匹配")
-                os.remove(block_file_name)
-                return
+            terminate_flag.set()
+            log(f"分块{index}校验未通过, SHA-1与元数据中的记录{block_dict['sha1']}不匹配")
+            return
+
+    def block_offset(index):
+        return sum(meta_dict['block'][i]['size'] for i in range(index))
 
     done_flag = threading.Semaphore(0)
     terminate_flag = threading.Event()
     thread_pool = []
-    block_file_name_dict = {}
+    download_block_list = []
     start_time = time.time()
-    meta_data = fetch_meta(args.meta)
-    if meta_data:
-        file_name = args.file if args.file else meta_data['filename']
-        log(f"下载: {file_name} ({meta_data['size'] / 1024 / 1024:.2f} MB), 共有{len(meta_data['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_data['time']))}")
+    meta_dict = fetch_meta(args.meta)
+    if meta_dict:
+        file_name = args.file if args.file else meta_dict['filename']
+        log(f"下载: {file_name} ({meta_dict['size'] / 1024 / 1024:.2f} MB), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
     else:
         log("元数据解析出错")
         return None
     log(f"线程数: {args.thread}")
-    if not (os.path.exists(file_name) and calc_sha1(read_in_chunks(file_name), hexdigest=True) == meta_data['sha1']):
-        for index, block in enumerate(meta_data['block']):
+    if os.path.exists(file_name) and os.path.getsize(file_name) == meta_dict['size']:
+        if calc_sha1(read_in_chunks(file_name), hexdigest=True) == meta_dict['sha1']:
+            log(f"{file_name}已存在于本地")
+            return file_name
+        else:
+            with open(file_name, "rb") as f:
+                for index, block_dict in enumerate(meta_dict['block']):
+                    f.seek(block_offset(index))
+                    if calc_sha1(f.read(block_dict['size']), hexdigest=True) == block_dict['sha1']:
+                        log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 已存在于本地")
+                    else:
+                        download_block_list.append(index)
+    else:
+        download_block_list = list(range(len(meta_dict['block'])))
+    with open(file_name, "r+b" if os.path.exists(file_name) else "wb") as f:
+        for index in download_block_list:
             if len(thread_pool) >= args.thread:
                 done_flag.acquire()
             if not terminate_flag.is_set():
-                thread_pool.append(threading.Thread(target=core, args=(index, block)))
+                thread_pool.append(threading.Thread(target=core, args=(index, meta_dict['block'][index], f)))
                 thread_pool[-1].start()
             else:
                 log("已终止下载, 等待线程回收")
@@ -267,25 +253,19 @@ def download_handle(args):
             thread.join()
         if terminate_flag.is_set():
             return None
-        with open(file_name, "wb") as f:
-            for index in range(len(meta_data['block'])):
-                block_file_name = block_file_name_dict[index]
-                f.write(image_load(block_file_name))
-                os.remove(block_file_name)
-        sha1 = calc_sha1(read_in_chunks(file_name), hexdigest=True)
-        log(f"SHA-1: {sha1}")
-        if sha1 == meta_data['sha1']:
-            log(f"{file_name}校验通过")
-            log(f"{file_name}下载完毕, 耗时{int(time.time() - start_time)}秒")
-            return file_name
-        else:
-            log(f"{file_name}校验未通过, SHA-1与元数据中的记录{meta_data['sha1']}不匹配")
-            return None
+        f.truncate(sum(block['size'] for block in meta_dict['block']))
+    sha1 = calc_sha1(read_in_chunks(file_name), hexdigest=True)
+    log(f"SHA-1: {sha1}")
+    if sha1 == meta_dict['sha1']:
+        log(f"{file_name}校验通过")
+        log(f"{file_name}下载完毕, 用时{int(time.time() - start_time)}秒, 平均速度{meta_dict['size'] / 1024 / 1024 / (time.time() - start_time):.2f} MB/s")
+        return file_name
     else:
-        log(f"{file_name}已存在于本地")
+        log(f"{file_name}校验未通过, SHA-1与元数据中的记录{meta_dict['sha1']}不匹配")
+        return None
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="BiliDrive", description="Bilibili Drive", epilog="By Hsury, 2019/10/24")
+    parser = argparse.ArgumentParser(prog="BiliDrive", description="Bilibili Drive", epilog="By Hsury, 2019/10/25")
     parser.add_argument("-c", "--cookies-file", default="cookies.json", help="cookies json file name")
 
     subparsers = parser.add_subparsers()
