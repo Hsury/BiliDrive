@@ -12,15 +12,11 @@ from urllib import parse
 class Bilibili:
     app_key = "1d8b6e7d45233436"
 
-    def __init__(self, https=True):
+    def __init__(self):
         self._session = requests.Session()
         self._session.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.75 Safari/537.36"})
         self.get_cookies = lambda: self._session.cookies.get_dict(domain=".bilibili.com")
-        self.get_csrf = lambda: self.get_cookies().get("bili_jct", "")
-        self.get_sid = lambda: self.get_cookies().get("sid", "")
         self.get_uid = lambda: self.get_cookies().get("DedeUserID", "")
-        self.access_token = ""
-        self.refresh_token = ""
         self.username = ""
         self.password = ""
         self.info = {
@@ -34,22 +30,18 @@ class Bilibili:
             'level': 0,
             'nickname': "",
         }
-        self.protocol = "https" if https else "http"
-        self.proxy = None
-        self.proxy_pool = set()
 
     def _log(self, message):
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}][{self.username if self.username else '#' + self.get_uid() if self.get_uid() else ''}] {message}")
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
 
-    def _requests(self, method, url, decode_level=2, enable_proxy=True, retry=10, timeout=15, **kwargs):
+    def _requests(self, method, url, decode_level=2, retry=10, timeout=15, **kwargs):
         if method in ["get", "post"]:
             for _ in range(retry + 1):
                 try:
-                    response = getattr(self._session, method)(url, timeout=timeout, proxies=self.proxy if enable_proxy else None, **kwargs)
+                    response = getattr(self._session, method)(url, timeout=timeout, **kwargs)
                     return response.json() if decode_level == 2 else response.content if decode_level == 1 else response
                 except:
-                    if enable_proxy:
-                        self.set_proxy()
+                    pass
         return None
 
     def _solve_captcha(self, image):
@@ -65,151 +57,71 @@ class Bilibili:
         sign_hash.update(f"{param}{salt}".encode())
         return sign_hash.hexdigest()
 
-    def set_proxy(self, add=None):
-        if isinstance(add, str):
-            self.proxy_pool.add(add)
-        elif isinstance(add, list):
-            self.proxy_pool.update(add)
-        if self.proxy_pool:
-            proxy = random.sample(self.proxy_pool, 1)[0]
-            self.proxy = {self.protocol: f"{self.protocol}://{proxy}"}
-            # self._log(f"使用{self.protocol.upper()}代理: {proxy}")
-        else:
-            self.proxy = None
-        return self.proxy
-
     # 登录
-    def login(self, **kwargs):
-        def by_cookie():
-            url = f"{self.protocol}://api.bilibili.com/x/space/myinfo"
-            headers = {'Host': "api.bilibili.com"}
-            response = self._requests("get", url, headers=headers)
-            if response and response.get("code") != -101:
-                self._log("Cookie仍有效")
-                return True
-            else:
-                self._log("Cookie已失效")
-                return False
-
-        def by_token(force_refresh=False):
-            if not force_refresh:
-                param = f"access_key={self.access_token}&appkey={Bilibili.app_key}&ts={int(time.time())}"
-                url = f"{self.protocol}://passport.bilibili.com/api/v2/oauth2/info?{param}&sign={self.calc_sign(param)}"
-                response = self._requests("get", url)
+    def login(self, username, password):
+        def get_key():
+            url = f"https://passport.bilibili.com/api/oauth2/getKey"
+            payload = {
+                'appkey': Bilibili.app_key,
+                'sign': self.calc_sign(f"appkey={Bilibili.app_key}"),
+            }
+            while True:
+                response = self._requests("post", url, data=payload)
                 if response and response.get("code") == 0:
-                    self._session.cookies.set('DedeUserID', str(response['data']['mid']), domain=".bilibili.com")
-                    self._log(f"Token仍有效, 有效期至{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() + int(response['data']['expires_in'])))}")
-                    param = f"access_key={self.access_token}&appkey={Bilibili.app_key}&gourl={self.protocol}%3A%2F%2Faccount.bilibili.com%2Faccount%2Fhome&ts={int(time.time())}"
-                    url = f"{self.protocol}://passport.bilibili.com/api/login/sso?{param}&sign={self.calc_sign(param)}"
-                    self._requests("get", url, decode_level=0)
-                    if all(key in self.get_cookies() for key in ["bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid", "SESSDATA"]):
-                        self._log("Cookie获取成功")
-                        return True
-                    else:
-                        self._log("Cookie获取失败")
-            url = f"{self.protocol}://passport.bilibili.com/api/v2/oauth2/refresh_token"
-            param = f"access_key={self.access_token}&appkey={Bilibili.app_key}&refresh_token={self.refresh_token}&ts={int(time.time())}"
+                    return {
+                        'key_hash': response['data']['hash'],
+                        'pub_key': rsa.PublicKey.load_pkcs1_openssl_pem(response['data']['key'].encode()),
+                    }
+                else:
+                    time.sleep(1)
+
+        self.username = username
+        self.password = password
+
+        while True:
+            key = get_key()
+            key_hash, pub_key = key['key_hash'], key['pub_key']
+            url = f"https://passport.bilibili.com/api/v2/oauth2/login"
+            param = f"appkey={Bilibili.app_key}&password={parse.quote_plus(base64.b64encode(rsa.encrypt(f'{key_hash}{self.password}'.encode(), pub_key)))}&username={parse.quote_plus(self.username)}"
             payload = f"{param}&sign={self.calc_sign(param)}"
             headers = {'Content-type': "application/x-www-form-urlencoded"}
             response = self._requests("post", url, data=payload, headers=headers)
-            if response and response.get("code") == 0:
-                for cookie in response['data']['cookie_info']['cookies']:
-                    self._session.cookies.set(cookie['name'], cookie['value'], domain=".bilibili.com")
-                self.access_token = response['data']['token_info']['access_token']
-                self.refresh_token = response['data']['token_info']['refresh_token']
-                self._log(f"Token刷新成功, 有效期至{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() + int(response['data']['token_info']['expires_in'])))}")
-                return True
-            else:
-                self.access_token = ""
-                self.refresh_token = ""
-                self._log("Token刷新失败")
-                return False
-
-        def by_password():
-            def get_key():
-                url = f"{self.protocol}://passport.bilibili.com/api/oauth2/getKey"
-                payload = {
-                    'appkey': Bilibili.app_key,
-                    'sign': self.calc_sign(f"appkey={Bilibili.app_key}"),
-                }
-                while True:
-                    response = self._requests("post", url, data=payload)
-                    if response and response.get("code") == 0:
-                        return {
-                            'key_hash': response['data']['hash'],
-                            'pub_key': rsa.PublicKey.load_pkcs1_openssl_pem(response['data']['key'].encode()),
-                        }
-                    else:
-                        time.sleep(1)
-
             while True:
-                key = get_key()
-                key_hash, pub_key = key['key_hash'], key['pub_key']
-                url = f"{self.protocol}://passport.bilibili.com/api/v2/oauth2/login"
-                param = f"appkey={Bilibili.app_key}&password={parse.quote_plus(base64.b64encode(rsa.encrypt(f'{key_hash}{self.password}'.encode(), pub_key)))}&username={parse.quote_plus(self.username)}"
-                payload = f"{param}&sign={self.calc_sign(param)}"
-                headers = {'Content-type': "application/x-www-form-urlencoded"}
-                response = self._requests("post", url, data=payload, headers=headers)
-                while True:
-                    if response and response.get("code") is not None:
-                        if response['code'] == -105:
-                            url = f"{self.protocol}://passport.bilibili.com/captcha"
-                            headers = {'Host': "passport.bilibili.com"}
-                            response = self._requests("get", url, headers=headers, decode_level=1)
-                            captcha = self._solve_captcha(response)
-                            if captcha:
-                                self._log(f"登录验证码识别结果: {captcha}")
-                                key = get_key()
-                                key_hash, pub_key = key['key_hash'], key['pub_key']
-                                url = f"{self.protocol}://passport.bilibili.com/api/v2/oauth2/login"
-                                param = f"appkey={Bilibili.app_key}&captcha={captcha}&password={parse.quote_plus(base64.b64encode(rsa.encrypt(f'{key_hash}{self.password}'.encode(), pub_key)))}&username={parse.quote_plus(self.username)}"
-                                payload = f"{param}&sign={self.calc_sign(param)}"
-                                headers = {'Content-type': "application/x-www-form-urlencoded"}
-                                response = self._requests("post", url, data=payload, headers=headers)
-                            else:
-                                self._log(f"登录验证码识别服务暂时不可用, {'尝试更换代理' if self.proxy else '10秒后重试'}")
-                                if not self.set_proxy():
-                                    time.sleep(10)
-                                break
-                        elif response['code'] == 0 and response['data']['status'] == 0:
-                            for cookie in response['data']['cookie_info']['cookies']:
-                                self._session.cookies.set(cookie['name'], cookie['value'], domain=".bilibili.com")
-                            self.access_token = response['data']['token_info']['access_token']
-                            self.refresh_token = response['data']['token_info']['refresh_token']
-                            self._log("登录成功")
-                            return True
+                if response and response.get("code") is not None:
+                    if response['code'] == -105:
+                        url = f"https://passport.bilibili.com/captcha"
+                        headers = {'Host': "passport.bilibili.com"}
+                        response = self._requests("get", url, headers=headers, decode_level=1)
+                        captcha = self._solve_captcha(response)
+                        if captcha:
+                            self._log(f"登录验证码识别结果: {captcha}")
+                            key = get_key()
+                            key_hash, pub_key = key['key_hash'], key['pub_key']
+                            url = f"https://passport.bilibili.com/api/v2/oauth2/login"
+                            param = f"appkey={Bilibili.app_key}&captcha={captcha}&password={parse.quote_plus(base64.b64encode(rsa.encrypt(f'{key_hash}{self.password}'.encode(), pub_key)))}&username={parse.quote_plus(self.username)}"
+                            payload = f"{param}&sign={self.calc_sign(param)}"
+                            headers = {'Content-type': "application/x-www-form-urlencoded"}
+                            response = self._requests("post", url, data=payload, headers=headers)
                         else:
-                            self._log(f"登录失败 {response}")
-                            return False
+                            self._log(f"登录验证码识别服务暂时不可用, 10秒后重试")
+                            time.sleep(10)
+                            break
+                    elif response['code'] == 0 and response['data']['status'] == 0:
+                        for cookie in response['data']['cookie_info']['cookies']:
+                            self._session.cookies.set(cookie['name'], cookie['value'], domain=".bilibili.com")
+                        self._log("登录成功")
+                        return True
                     else:
-                        self._log(f"当前IP登录过于频繁, {'尝试更换代理' if self.proxy else '1分钟后重试'}")
-                        if not self.set_proxy():
-                            time.sleep(60)
-                        break
-
-        self._session.cookies.clear()
-        for name in ["bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid", "SESSDATA"]:
-            value = kwargs.get(name)
-            if value:
-                self._session.cookies.set(name, value, domain=".bilibili.com")
-        self.access_token = kwargs.get("access_token", "")
-        self.refresh_token = kwargs.get("refresh_token", "")
-        self.username = kwargs.get("username", "")
-        self.password = kwargs.get("password", "")
-        force_refresh_token = kwargs.get("force_refresh_token", False)
-        if (not force_refresh_token or not self.access_token or not self.refresh_token) and all(key in self.get_cookies() for key in ["bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid", "SESSDATA"]) and by_cookie():
-            return True
-        elif self.access_token and self.refresh_token and by_token(force_refresh_token):
-            return True
-        elif self.username and self.password and by_password():
-            return True
-        else:
-            self._session.cookies.clear()
-            return False
+                        self._log(f"登录失败 {response}")
+                        return False
+                else:
+                    self._log(f"当前IP登录过于频繁, 1分钟后重试")
+                    time.sleep(60)
+                    break
 
     # 获取用户信息
     def get_user_info(self):
-        url = f"{self.protocol}://api.bilibili.com/x/space/myinfo?jsonp=jsonp"
+        url = f"https://api.bilibili.com/x/space/myinfo?jsonp=jsonp"
         headers = {
             'Host': "api.bilibili.com",
             'Referer': f"https://space.bilibili.com/{self.get_uid()}/",
