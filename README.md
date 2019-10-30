@@ -25,6 +25,12 @@
 
 ## 使用指南
 
+### 准备
+
+前往[发布页](https://github.com/Hsury/BiliDrive/releases/latest)获取可直接运行的二进制文件
+
+亦可[下载源代码](https://github.com/Hsury/BiliDrive/archive/master.zip)后使用Python 3.6或更高版本运行
+
 ### 登录
 
 ```

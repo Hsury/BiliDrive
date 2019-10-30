@@ -196,6 +196,9 @@ def upload_handle(args):
         log("Cookies加载失败, 请先登录")
         return None
     file_name = args.file
+    if not os.path.exists(file_name):
+        log(f"{file_name}不存在")
+        return None
     log(f"上传: {os.path.basename(file_name)} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
     first_4mb_sha1 = calc_sha1(read_in_chunks(file_name, chunk_size=4 * 1024 * 1024, chunk_number=1), hexdigest=True)
     history = read_history()
@@ -371,6 +374,7 @@ if __name__ == "__main__":
             args = parser.parse_args()
             try:
                 args.func(args)
+                break
             except AttributeError:
                 shell = True
                 parser.print_help()
