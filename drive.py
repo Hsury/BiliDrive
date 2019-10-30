@@ -189,12 +189,6 @@ def upload_handle(args):
             f.write(json.dumps(history, ensure_ascii=False, indent=2))
 
     start_time = time.time()
-    try:
-        with open(os.path.join(bundle_dir, "cookies.json"), "r", encoding="utf-8") as f:
-            cookies = json.loads(f.read())
-    except:
-        log("Cookies加载失败, 请先登录")
-        return None
     file_name = args.file
     if not os.path.exists(file_name):
         log(f"{file_name}不存在")
@@ -207,6 +201,12 @@ def upload_handle(args):
         log(f"该文件已于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(history[first_4mb_sha1]['time']))}上传, 共有{len(history[first_4mb_sha1]['block'])}个分块")
         log(meta_string(url))
         return url
+    try:
+        with open(os.path.join(bundle_dir, "cookies.json"), "r", encoding="utf-8") as f:
+            cookies = json.loads(f.read())
+    except:
+        log("Cookies加载失败, 请先登录")
+        return None
     log(f"线程数: {args.thread}")
     done_flag = threading.Semaphore(0)
     terminate_flag = threading.Event()
