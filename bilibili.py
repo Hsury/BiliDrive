@@ -31,7 +31,8 @@ class Bilibili:
             'nickname': "",
         }
 
-    def _log(self, message):
+    @staticmethod
+    def _log(message):
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
 
     def _requests(self, method, url, decode_level=2, retry=10, timeout=15, **kwargs):

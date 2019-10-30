@@ -8,11 +8,15 @@ import math
 import os
 import re
 import requests
+import signal
 import struct
+import sys
 import threading
 import time
 import types
 from bilibili import Bilibili
+
+bundle_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
 default_url = lambda sha1: f"http://i0.hdslb.com/bfs/album/{sha1}.x-ms-bmp"
 meta_string = lambda url: ("bdrive://" + re.findall(r"[a-fA-F0-9]{40}", url)[0]) if re.match(r"^http(s?)://i0.hdslb.com/bfs/album/[a-fA-F0-9]{40}.x-ms-bmp$", url) else url
@@ -46,8 +50,8 @@ def calc_sha1(data, hexdigest=False):
     return sha1.hexdigest() if hexdigest else sha1.digest()
 
 def fetch_meta(string):
-    if re.match(r"^bdrive://[a-fA-F0-9]{40}$", string) or  re.match(r"^[a-fA-F0-9]{40}$", string):
-        full_meta = image_download(default_url(re.findall(r'[a-fA-F0-9]{40}', string)[0]))
+    if re.match(r"^bdrive://[a-fA-F0-9]{40}$", string) or re.match(r"^[a-fA-F0-9]{40}$", string):
+        full_meta = image_download(default_url(re.findall(r"[a-fA-F0-9]{40}", string)[0]))
     elif string.startswith("http://") or string.startswith("https://"):
         full_meta = image_download(string)
     else:
@@ -84,11 +88,11 @@ def image_download(url):
     return response
 
 def log(message):
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
+    Bilibili._log(message)
 
 def read_history():
     try:
-        with open("history.json", "r", encoding="utf-8") as f:
+        with open(os.path.join(bundle_dir, "history.json"), "r", encoding="utf-8") as f:
             history = json.loads(f.read())
     except:
         history = {}
@@ -118,21 +122,21 @@ def history_handle(args):
 def info_handle(args):
     meta_dict = fetch_meta(args.meta)
     if meta_dict:
-        log(f"文件名: {meta_dict['filename']}")
-        log(f"大小: {meta_dict['size'] / 1024 / 1024:.2f} MB")
-        log(f"SHA-1: {meta_dict['sha1']}")
-        log(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
-        log(f"分块数: {len(meta_dict['block'])}")
+        print(f"文件名: {meta_dict['filename']}")
+        print(f"大小: {meta_dict['size'] / 1024 / 1024:.2f} MB")
+        print(f"SHA-1: {meta_dict['sha1']}")
+        print(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+        print(f"分块数: {len(meta_dict['block'])}")
         for index, block_dict in enumerate(meta_dict['block']):
-            log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) URL: {block_dict['url']}")
+            print(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) URL: {block_dict['url']}")
     else:
-        log("元数据解析失败")
+        print("元数据解析失败")
 
 def login_handle(args):
     bilibili = Bilibili()
     if bilibili.login(username=args.username, password=args.password):
         bilibili.get_user_info()
-        with open("cookies.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(bundle_dir, "cookies.json"), "w", encoding="utf-8") as f:
             f.write(json.dumps(bilibili.get_cookies(), ensure_ascii=False, indent=2))
 
 def upload_handle(args):
@@ -181,12 +185,12 @@ def upload_handle(args):
         history = read_history()
         history[first_4mb_sha1] = meta_dict
         history[first_4mb_sha1]['url'] = url
-        with open("history.json", "w", encoding="utf-8") as f:
+        with open(os.path.join(bundle_dir, "history.json"), "w", encoding="utf-8") as f:
             f.write(json.dumps(history, ensure_ascii=False, indent=2))
 
     start_time = time.time()
     try:
-        with open("cookies.json", "r", encoding="utf-8") as f:
+        with open(os.path.join(bundle_dir, "cookies.json"), "r", encoding="utf-8") as f:
             cookies = json.loads(f.read())
     except:
         log("Cookies加载失败, 请先登录")
@@ -264,6 +268,12 @@ def download_handle(args):
     def block_offset(index):
         return sum(meta_dict['block'][i]['size'] for i in range(index))
 
+    def is_overwrite(file_name):
+        if args.force:
+            return True
+        else:
+            return (input(f"{os.path.basename(file_name)}已存在于本地, 是否覆盖? [y/N] ") in ["y", "Y"])
+
     start_time = time.time()
     meta_dict = fetch_meta(args.meta)
     if meta_dict:
@@ -274,11 +284,11 @@ def download_handle(args):
         return None
     log(f"线程数: {args.thread}")
     download_block_list = []
-    if os.path.exists(file_name) and os.path.getsize(file_name) == meta_dict['size']:
-        if calc_sha1(read_in_chunks(file_name), hexdigest=True) == meta_dict['sha1']:
-            log(f"{os.path.basename(file_name)}已存在于本地")
+    if os.path.exists(file_name):
+        if os.path.getsize(file_name) == meta_dict['size'] and calc_sha1(read_in_chunks(file_name), hexdigest=True) == meta_dict['sha1']:
+            log(f"{os.path.basename(file_name)}已存在于本地, 且与服务器端文件内容一致")
             return file_name
-        else:
+        elif is_overwrite(file_name):
             with open(file_name, "rb") as f:
                 for index, block_dict in enumerate(meta_dict['block']):
                     f.seek(block_offset(index))
@@ -288,6 +298,8 @@ def download_handle(args):
                     else:
                         # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 需要重新下载")
                         download_block_list.append(index)
+        else:
+            return None
     else:
         download_block_list = list(range(len(meta_dict['block'])))
     done_flag = threading.Semaphore(0)
@@ -318,7 +330,8 @@ def download_handle(args):
         return None
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Bilibili Drive", epilog="By Hsury, 2019/10/25")
+    signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
+    parser = argparse.ArgumentParser(description="Bilibili Drive", epilog="By Hsury, 2019/10/30")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)
@@ -337,10 +350,27 @@ if __name__ == "__main__":
     download_parser = subparsers.add_parser("download", help="download a file")
     download_parser.add_argument("meta", help="meta url")
     download_parser.add_argument("file", nargs="?", default="", help="new file name")
+    download_parser.add_argument("-f", "--force", action="store_true", help="force to overwrite if file exists")
     download_parser.add_argument("-t", "--thread", default=8, type=int, help="download thread number")
     download_parser.set_defaults(func=download_handle)
-    args = parser.parse_args()
-    try:
-        args.func(args)
-    except AttributeError:
-        parser.print_help()
+    shell = False
+    while True:
+        if shell:
+            args = input("BiliDrive > ").split()
+            if args == ["exit"]:
+                break
+            elif args == ["help"]:
+                parser.print_help()
+            else:
+                try:
+                    args = parser.parse_args(args)
+                    args.func(args)
+                except:
+                    pass
+        else:
+            args = parser.parse_args()
+            try:
+                args.func(args)
+            except AttributeError:
+                shell = True
+                parser.print_help()

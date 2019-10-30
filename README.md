@@ -5,7 +5,7 @@
 <h1 align="center">- BiliDrive -</h1>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.10.26-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.10.30-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 </p>
 
@@ -18,7 +18,7 @@
 ## 特色
 
 - 轻量：无复杂依赖，资源占用少
-- 自由：无文件内容与大小限制，无容量限制
+- 自由：无文件格式与大小限制，无容量限制
 - 安全：上传的文件需要通过生成的META地址才能访问，他人无法随意查看
 - 稳定：带有分块校验与超时重试机制，在较差的网络环境中依然能确保文件的完整性
 - 快速：支持多线程传输与断点续传，同时借助B站的CDN资源，能最大化地利用网络环境进行上传与下载
@@ -45,27 +45,28 @@ file: 待上传的文件路径
 -t THREAD: 上传线程数, 默认值为4
 ```
 
-上传完毕后，终端会打印一串META地址（通常以bdrive://开头）用于下载或分享，请妥善保管
+上传完毕后，终端会打印一串META地址（通常以`bdrive://`开头）用于下载或分享，请妥善保管
 
 ### 下载
 
 ```
-drive.py download [-h] [-t THREAD] meta [file]
+drive.py download [-h] [-f] [-t THREAD] meta [file]
 
-meta: META地址(通常以bdrive://开头)
+meta: META地址(通常以`bdrive://`开头)
 file: 另存为新的文件名, 不指定则保存为上传时的文件名
 
+-f: 覆盖已有文件
 -t THREAD: 下载线程数, 默认值为8
 ```
 
-下载完毕后会自动进行整个文件的完整性校验，对于大文件该过程可能需要较长时间，若不愿等待可选择直接退出
+下载完毕后会自动进行文件完整性校验，对于大文件该过程可能需要较长时间，若不愿等待可直接退出
 
 ### 查看文件元数据
 
 ```
 drive.py info [-h] meta
 
-meta: META地址(通常以bdrive://开头)
+meta: META地址(通常以`bdrive://`开头)
 ```
 
 ### 查看历史记录
@@ -73,6 +74,16 @@ meta: META地址(通常以bdrive://开头)
 ```
 drive.py history [-h]
 ```
+
+### 交互模式
+
+交互模式主要为Windows普通用户设计，直接运行程序即可进入
+
+该模式下，程序会打印命令提示符`BiliDrive > `，并等待用户输入命令
+
+执行`help`以获取可用命令
+
+执行`exit`以退出交互模式
 
 ## 技术实现
 
@@ -138,7 +149,7 @@ META地址：bdrive://d28784bff1086450a6c331fb322accccd382228e
 
 请合理使用本项目，避免对哔哩哔哩的存储与带宽资源造成无意义的浪费
 
-该项目仅用于学习和技术交流，开发者不承担任何由使用者的行为所带来的法律责任
+该项目仅用于学习和技术交流，开发者不承担任何由使用者的行为带来的法律责任
 
 ## 许可证
 
