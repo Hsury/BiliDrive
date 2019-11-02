@@ -5,7 +5,7 @@
 <h1 align="center">- BiliDrive -</h1>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.10.30-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.11.2-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 </p>
 

@@ -8,11 +8,13 @@ import math
 import os
 import re
 import requests
+import shlex
 import signal
 import struct
 import sys
 import threading
 import time
+import traceback
 import types
 from bilibili import Bilibili
 
@@ -67,7 +69,7 @@ def image_upload(data, cookies):
     headers = {
         'Origin': "https://t.bilibili.com",
         'Referer': "https://t.bilibili.com/",
-        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36",
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
     }
     files = {
         'file_up': (f"{int(time.time() * 1000)}.bmp", data),
@@ -75,17 +77,27 @@ def image_upload(data, cookies):
         'category': "daily",
     }
     try:
-        response = requests.post(url, headers=headers, cookies=cookies, files=files).json()
+        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=5).json()
     except:
         response = None
     return response
 
 def image_download(url):
+    headers = {
+        'Referer': "http://t.bilibili.com/",
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
+    }
+    content = []
+    last_chunk_time = None
     try:
-        response = requests.get(url).content
+        for chunk in requests.get(url, headers=headers, timeout=5, stream=True).iter_content(64 * 1024):
+            if last_chunk_time is not None and time.time() - last_chunk_time > 5:
+                return None
+            content.append(chunk)
+            last_chunk_time = time.time()
+        return b"".join(content)
     except:
-        response = None
-    return response
+        return None
 
 def log(message):
     Bilibili._log(message)
@@ -141,45 +153,58 @@ def login_handle(args):
 
 def upload_handle(args):
     def core(index, block):
-        block_sha1 = calc_sha1(block, hexdigest=True)
-        full_block = bmp_header(block) + block
-        full_block_sha1 = calc_sha1(full_block, hexdigest=True)
-        url = skippable(full_block_sha1)
-        if url:
-            # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已存在于服务器")
-            block_dict[index] = {
-                'url': url,
-                'size': len(block),
-                'sha1': block_sha1,
-            }
-            done_flag.release()
-        else:
-            # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 开始上传")
-            for _ in range(10):
-                response = image_upload(full_block, cookies)
-                if response:
-                    if response['code'] == 0:
-                        url = response['data']['image_url']
-                        log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 上传完毕")
-                        block_dict[index] = {
-                            'url': url,
-                            'size': len(block),
-                            'sha1': block_sha1,
-                        }
-                        done_flag.release()
-                        break
-                    elif response['code'] == -4:
-                        terminate_flag.set()
-                        log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败, 请重新登录")
-                        break
-                log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败")
+        try:
+            block_sha1 = calc_sha1(block, hexdigest=True)
+            full_block = bmp_header(block) + block
+            full_block_sha1 = calc_sha1(full_block, hexdigest=True)
+            url = skippable(full_block_sha1)
+            if url:
+                # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已存在于服务器")
+                block_dict[index] = {
+                    'url': url,
+                    'size': len(block),
+                    'sha1': block_sha1,
+                }
+                done_flag.release()
             else:
-                terminate_flag.set()
+                # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 开始上传")
+                for _ in range(10):
+                    response = image_upload(full_block, cookies)
+                    if response:
+                        if response['code'] == 0:
+                            url = response['data']['image_url']
+                            log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 上传完毕")
+                            block_dict[index] = {
+                                'url': url,
+                                'size': len(block),
+                                'sha1': block_sha1,
+                            }
+                            done_flag.release()
+                            break
+                        elif response['code'] == -4:
+                            terminate_flag.set()
+                            log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败, 请重新登录")
+                            break
+                    log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败")
+                else:
+                    terminate_flag.set()
+        except:
+            terminate_flag.set()
+            traceback.print_exc()
 
     def skippable(sha1):
         url = default_url(sha1)
-        response = requests.head(url)
-        return url if response.status_code == 200 else None
+        headers = {
+            'Referer': "http://t.bilibili.com/",
+            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
+        }
+        for _ in range(3):
+            try:
+                response = requests.head(url, headers=headers, timeout=5)
+                return url if response.status_code == 200 else None
+            except:
+                pass
+        return None
 
     def write_history(first_4mb_sha1, meta_dict, url):
         history = read_history()
@@ -249,24 +274,29 @@ def upload_handle(args):
 
 def download_handle(args):
     def core(index, block_dict):
-        # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 开始下载")
-        for _ in range(10):
-            block = image_download(block_dict['url'])[62:]
-            if block:
-                if calc_sha1(block, hexdigest=True) == block_dict['sha1']:
-                    file_lock.acquire()
-                    f.seek(block_offset(index))
-                    f.write(block)
-                    file_lock.release()
-                    log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 下载完毕")
-                    done_flag.release()
-                    break
+        try:
+            # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 开始下载")
+            for _ in range(10):
+                block = image_download(block_dict['url'])
+                if block:
+                    block = block[62:]
+                    if calc_sha1(block, hexdigest=True) == block_dict['sha1']:
+                        file_lock.acquire()
+                        f.seek(block_offset(index))
+                        f.write(block)
+                        file_lock.release()
+                        log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 下载完毕")
+                        done_flag.release()
+                        break
+                    else:
+                        log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 校验未通过")
                 else:
-                    log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 校验未通过")
+                    log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 第{_ + 1}次下载失败")
             else:
-                log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 第{_ + 1}次下载失败")
-        else:
+                terminate_flag.set()
+        except:
             terminate_flag.set()
+            traceback.print_exc()
 
     def block_offset(index):
         return sum(meta_dict['block'][i]['size'] for i in range(index))
@@ -301,10 +331,11 @@ def download_handle(args):
                     else:
                         # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 需要重新下载")
                         download_block_list.append(index)
+            log(f"{len(download_block_list)}个分块待下载")
         else:
             return None
     else:
-        download_block_list = list(range(len(meta_dict['block'])))
+        download_block_list = list(range(len(meta_dict['block'])))        
     done_flag = threading.Semaphore(0)
     terminate_flag = threading.Event()
     file_lock = threading.Lock()
@@ -334,7 +365,7 @@ def download_handle(args):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="Bilibili Drive", epilog="By Hsury, 2019/10/30")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/2")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)
@@ -359,7 +390,7 @@ if __name__ == "__main__":
     shell = False
     while True:
         if shell:
-            args = input("BiliDrive > ").split()
+            args = shlex.split(input("BiliDrive > "))
             if args == ["exit"]:
                 break
             elif args == ["help"]:
@@ -377,4 +408,3 @@ if __name__ == "__main__":
                 break
             except AttributeError:
                 shell = True
-                parser.print_help()
