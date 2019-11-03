@@ -77,7 +77,7 @@ def image_upload(data, cookies):
         'category': "daily",
     }
     try:
-        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=5).json()
+        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=10).json()
     except:
         response = None
     return response
@@ -90,7 +90,7 @@ def image_download(url):
     content = []
     last_chunk_time = None
     try:
-        for chunk in requests.get(url, headers=headers, timeout=5, stream=True).iter_content(64 * 1024):
+        for chunk in requests.get(url, headers=headers, timeout=10, stream=True).iter_content(64 * 1024):
             if last_chunk_time is not None and time.time() - last_chunk_time > 5:
                 return None
             content.append(chunk)
@@ -165,10 +165,11 @@ def upload_handle(args):
                     'size': len(block),
                     'sha1': block_sha1,
                 }
-                done_flag.release()
             else:
                 # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 开始上传")
                 for _ in range(10):
+                    if terminate_flag.is_set():
+                        return
                     response = image_upload(full_block, cookies)
                     if response:
                         if response['code'] == 0:
@@ -179,18 +180,19 @@ def upload_handle(args):
                                 'size': len(block),
                                 'sha1': block_sha1,
                             }
-                            done_flag.release()
-                            break
+                            return
                         elif response['code'] == -4:
                             terminate_flag.set()
                             log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败, 请重新登录")
-                            break
+                            return
                     log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败")
                 else:
                     terminate_flag.set()
         except:
             terminate_flag.set()
             traceback.print_exc()
+        finally:
+            done_flag.release()
 
     def skippable(sha1):
         url = default_url(sha1)
@@ -198,9 +200,9 @@ def upload_handle(args):
             'Referer': "http://t.bilibili.com/",
             'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
         }
-        for _ in range(3):
+        for _ in range(5):
             try:
-                response = requests.head(url, headers=headers, timeout=5)
+                response = requests.head(url, headers=headers, timeout=10)
                 return url if response.status_code == 200 else None
             except:
                 pass
@@ -245,6 +247,7 @@ def upload_handle(args):
             thread_pool[-1].start()
         else:
             log("已终止上传, 等待线程回收")
+            break
     for thread in thread_pool:
         thread.join()
     if terminate_flag.is_set():
@@ -277,6 +280,8 @@ def download_handle(args):
         try:
             # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 开始下载")
             for _ in range(10):
+                if terminate_flag.is_set():
+                    return
                 block = image_download(block_dict['url'])
                 if block:
                     block = block[62:]
@@ -286,8 +291,7 @@ def download_handle(args):
                         f.write(block)
                         file_lock.release()
                         log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 下载完毕")
-                        done_flag.release()
-                        break
+                        return
                     else:
                         log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 校验未通过")
                 else:
@@ -297,6 +301,8 @@ def download_handle(args):
         except:
             terminate_flag.set()
             traceback.print_exc()
+        finally:
+            done_flag.release()
 
     def block_offset(index):
         return sum(meta_dict['block'][i]['size'] for i in range(index))
@@ -349,6 +355,7 @@ def download_handle(args):
                 thread_pool[-1].start()
             else:
                 log("已终止下载, 等待线程回收")
+                break
         for thread in thread_pool:
             thread.join()
         if terminate_flag.is_set():
@@ -365,7 +372,7 @@ def download_handle(args):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/2")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/3")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)
