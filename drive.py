@@ -220,6 +220,9 @@ def upload_handle(args):
     if not os.path.exists(file_name):
         log(f"{file_name}不存在")
         return None
+    if os.path.isdir(file_name):
+        log("不支持上传文件夹")
+        return None
     log(f"上传: {os.path.basename(file_name)} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
     first_4mb_sha1 = calc_sha1(read_in_chunks(file_name, chunk_size=4 * 1024 * 1024, chunk_number=1), hexdigest=True)
     history = read_history()
@@ -372,7 +375,7 @@ def download_handle(args):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/3")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/9")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)

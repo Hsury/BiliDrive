@@ -5,7 +5,8 @@
 <h1 align="center">- BiliDrive -</h1>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.11.3-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.11.9-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 </p>
 
@@ -58,7 +59,7 @@ file: 待上传的文件路径
 ```
 drive.py download [-h] [-f] [-t THREAD] meta [file]
 
-meta: META地址(通常以`bdrive://`开头)
+meta: META地址(通常以bdrive://开头)
 file: 另存为新的文件名, 不指定则保存为上传时的文件名
 
 -f: 覆盖已有文件
@@ -72,7 +73,7 @@ file: 另存为新的文件名, 不指定则保存为上传时的文件名
 ```
 drive.py info [-h] meta
 
-meta: META地址(通常以`bdrive://`开头)
+meta: META地址(通常以bdrive://开头)
 ```
 
 ### 查看历史记录

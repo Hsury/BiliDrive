@@ -35,7 +35,7 @@ class Bilibili:
     def _log(message):
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
 
-    def _requests(self, method, url, decode_level=2, retry=10, timeout=15, **kwargs):
+    def _requests(self, method, url, decode_level=2, retry=0, timeout=10, **kwargs):
         if method in ["get", "post"]:
             for _ in range(retry + 1):
                 try:

@@ -1,0 +1,53 @@
+if: 'tag IS blank'
+env:
+    global:
+        - TRAVIS_TAG=v1.3
+jobs:
+    include:
+        -
+            name: 'Python 3.7.5 on Linux (AMD64)'
+            os: linux
+            dist: bionic
+            arch: amd64
+            language: python
+            python: 3.7.5
+            env: RELEASE_FILENAME=bilidrive-$TRAVIS_TAG-linux-amd64.tar.gz
+        -
+            name: 'Python 3.7.5 on Linux (ARM64)'
+            os: linux
+            dist: bionic
+            arch: arm64
+            language: python
+            python: 3.7.5
+            env: ['PATH=~/.ruby/bin:$PATH', GEM_HOME=~/.ruby, RELEASE_FILENAME=bilidrive-$TRAVIS_TAG-linux-arm64.tar.gz]
+        -
+            name: 'Python 3.7.4 on macOS (AMD64)'
+            os: osx
+            osx_image: xcode11.2
+            arch: amd64
+            language: shell
+            env: RELEASE_FILENAME=bilidrive-$TRAVIS_TAG-macos-amd64.zip
+        -
+            name: 'Python 3.7.5 on Windows (AMD64)'
+            os: windows
+            arch: amd64
+            language: shell
+            env: ['PATH=/c/Python37:/c/Python37/Scripts:$PATH', RELEASE_FILENAME=bilidrive-$TRAVIS_TAG-windows-amd64.zip]
+            before_install: 'choco install python --version 3.7.5'
+install:
+    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python -m pip install -U pip; else pip3 install -U pip; fi'
+    - 'pip3 install -r requirements.txt'
+    - 'pip3 install pyinstaller'
+script:
+    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python drive.py -h; else python3 drive.py -h; fi'
+    - 'pyinstaller -F -n BiliDrive -i icon.ico drive.py'
+    - 'mkdir -p release/BiliDrive'
+    - 'cp {dist/*,LICENSE,README.md} release/BiliDrive'
+    - 'cd release'
+    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then 7z a -tzip $RELEASE_FILENAME BiliDrive; elif [ "$TRAVIS_OS_NAME" = "osx" ]; then zip -r $RELEASE_FILENAME BiliDrive; else tar -czvf $RELEASE_FILENAME BiliDrive; fi'
+deploy:
+    provider: releases
+    api_key: $GITHUB_OAUTH_TOKEN
+    file: $RELEASE_FILENAME
+    overwrite: true
+    skip_cleanup: true
