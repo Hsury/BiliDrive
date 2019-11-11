@@ -375,7 +375,7 @@ def download_handle(args):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/9")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/11")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)

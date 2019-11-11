@@ -1,11 +1,7 @@
-<p align="center">
-<img src="https://cdn.kagamiz.com/BiliDrive/bilidrive.png" width="200">
-</p>
-
-<h1 align="center">- BiliDrive -</h1>
+<h1 align="center">BiliDrive</h1>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.11.9-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.11.11-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 </p>
