@@ -1,12 +1,16 @@
-<h1 align="center">BiliDrive</h1>
+<p align="center">
+<img src="https://cdn.kagamiz.com/BiliDrive/bilidrive.png" width="128">
+</p>
+
+<h1 align="center">- BiliDrive -</h1>
+
+<h4 align="center">☁️ 哔哩哔哩云，支持任意文件的全速上传与下载 ☁️</h4>
 
 <p align="center">
 <img src="https://img.shields.io/badge/version-2019.11.11-green.svg?longCache=true&style=for-the-badge">
-<img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 </p>
-
-<h4 align="center">☁️ 哔哩哔哩网盘，无限容量，带宽跑满，支持任意文件的多线程上传/下载与断点续传</h4>
 
 <p align="center">
 <img src="https://cdn.kagamiz.com/BiliDrive/demo.png" width="750">
@@ -91,8 +95,6 @@ drive.py history [-h]
 ## 技术实现
 
 将任意文件分块编码为图片后上传至B站，对该操作逆序即可下载并还原文件
-
-*内容待补充*
 
 ## 性能指标
 

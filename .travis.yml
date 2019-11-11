@@ -1,7 +1,7 @@
 if: 'tag IS blank'
 env:
     global:
-        - TRAVIS_TAG=v1.3
+        - TRAVIS_TAG=v1.4
 jobs:
     include:
         -
@@ -40,7 +40,7 @@ install:
     - 'pip3 install pyinstaller'
 script:
     - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python drive.py -h; else python3 drive.py -h; fi'
-    - 'pyinstaller -F -n BiliDrive drive.py'
+    - 'pyinstaller -F -n BiliDrive -i icon.ico drive.py'
     - 'mkdir -p release/BiliDrive'
     - 'cp {dist/*,LICENSE,README.md} release/BiliDrive'
     - 'cd release'
