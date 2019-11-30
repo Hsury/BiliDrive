@@ -77,7 +77,7 @@ def image_upload(data, cookies):
         'category': "daily",
     }
     try:
-        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=10).json()
+        response = requests.post(url, headers=headers, cookies=cookies, files=files).json()
     except:
         response = None
     return response
@@ -110,7 +110,7 @@ def read_history():
         history = {}
     return history
 
-def read_in_chunks(file_name, chunk_size=16 * 1024 * 1024, chunk_number=-1):
+def read_in_chunk(file_name, chunk_size=16 * 1024 * 1024, chunk_number=-1):
     chunk_counter = 0
     with open(file_name, "rb") as f:
         while True:
@@ -157,7 +157,7 @@ def upload_handle(args):
             block_sha1 = calc_sha1(block, hexdigest=True)
             full_block = bmp_header(block) + block
             full_block_sha1 = calc_sha1(full_block, hexdigest=True)
-            url = skippable(full_block_sha1)
+            url = is_skippable(full_block_sha1)
             if url:
                 # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已存在于服务器")
                 block_dict[index] = {
@@ -194,7 +194,7 @@ def upload_handle(args):
         finally:
             done_flag.release()
 
-    def skippable(sha1):
+    def is_skippable(sha1):
         url = default_url(sha1)
         headers = {
             'Referer': "http://t.bilibili.com/",
@@ -224,7 +224,7 @@ def upload_handle(args):
         log("不支持上传文件夹")
         return None
     log(f"上传: {os.path.basename(file_name)} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
-    first_4mb_sha1 = calc_sha1(read_in_chunks(file_name, chunk_size=4 * 1024 * 1024, chunk_number=1), hexdigest=True)
+    first_4mb_sha1 = calc_sha1(read_in_chunk(file_name, chunk_size=4 * 1024 * 1024, chunk_number=1), hexdigest=True)
     history = read_history()
     if first_4mb_sha1 in history:
         url = history[first_4mb_sha1]['url']
@@ -242,7 +242,7 @@ def upload_handle(args):
     terminate_flag = threading.Event()
     thread_pool = []
     block_dict = {}
-    for index, block in enumerate(read_in_chunks(file_name, chunk_size=args.block_size * 1024 * 1024)):
+    for index, block in enumerate(read_in_chunk(file_name, chunk_size=args.block_size * 1024 * 1024)):
         if len(thread_pool) >= args.thread:
             done_flag.acquire()
         if not terminate_flag.is_set():
@@ -255,7 +255,7 @@ def upload_handle(args):
         thread.join()
     if terminate_flag.is_set():
         return None
-    sha1 = calc_sha1(read_in_chunks(file_name), hexdigest=True)
+    sha1 = calc_sha1(read_in_chunk(file_name), hexdigest=True)
     meta_dict = {
         'time': int(time.time()),
         'filename': os.path.basename(file_name),
@@ -310,7 +310,7 @@ def download_handle(args):
     def block_offset(index):
         return sum(meta_dict['block'][i]['size'] for i in range(index))
 
-    def is_overwrite(file_name):
+    def is_overwritable(file_name):
         if args.force:
             return True
         else:
@@ -327,10 +327,10 @@ def download_handle(args):
     log(f"线程数: {args.thread}")
     download_block_list = []
     if os.path.exists(file_name):
-        if os.path.getsize(file_name) == meta_dict['size'] and calc_sha1(read_in_chunks(file_name), hexdigest=True) == meta_dict['sha1']:
+        if os.path.getsize(file_name) == meta_dict['size'] and calc_sha1(read_in_chunk(file_name), hexdigest=True) == meta_dict['sha1']:
             log(f"{os.path.basename(file_name)}已存在于本地, 且与服务器端文件内容一致")
             return file_name
-        elif is_overwrite(file_name):
+        elif is_overwritable(file_name):
             with open(file_name, "rb") as f:
                 for index, block_dict in enumerate(meta_dict['block']):
                     f.seek(block_offset(index))
@@ -344,7 +344,7 @@ def download_handle(args):
         else:
             return None
     else:
-        download_block_list = list(range(len(meta_dict['block'])))        
+        download_block_list = list(range(len(meta_dict['block'])))
     done_flag = threading.Semaphore(0)
     terminate_flag = threading.Event()
     file_lock = threading.Lock()
@@ -365,7 +365,7 @@ def download_handle(args):
             return None
         f.truncate(sum(block['size'] for block in meta_dict['block']))
     log(f"{os.path.basename(file_name)}下载完毕, 用时{int(time.time() - start_time)}秒, 平均速度{meta_dict['size'] / 1024 / 1024 / (time.time() - start_time):.2f} MB/s")
-    sha1 = calc_sha1(read_in_chunks(file_name), hexdigest=True)
+    sha1 = calc_sha1(read_in_chunk(file_name), hexdigest=True)
     if sha1 == meta_dict['sha1']:
         log(f"{os.path.basename(file_name)}校验通过")
         return file_name
@@ -375,7 +375,7 @@ def download_handle(args):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/11")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/30")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)
