@@ -22,6 +22,7 @@ bundle_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) el
 
 default_url = lambda sha1: f"http://i0.hdslb.com/bfs/album/{sha1}.x-ms-bmp"
 meta_string = lambda url: ("bdrive://" + re.findall(r"[a-fA-F0-9]{40}", url)[0]) if re.match(r"^http(s?)://i0.hdslb.com/bfs/album/[a-fA-F0-9]{40}.x-ms-bmp$", url) else url
+size_string = lambda byte: f"{byte / 1024 / 1024 / 1024:.2f} GB" if byte > 1024 * 1024 * 1024 else f"{byte / 1024 / 1024:.2f} MB" if byte > 1024 * 1024 else f"{byte / 1024:.2f} KB" if byte > 1024 else f"{int(byte)} B"
 
 def bmp_header(data):
     return b"BM" \
@@ -69,7 +70,7 @@ def image_upload(data, cookies):
     headers = {
         'Origin': "https://t.bilibili.com",
         'Referer': "https://t.bilibili.com/",
-        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36",
     }
     files = {
         'file_up': (f"{int(time.time() * 1000)}.bmp", data),
@@ -77,7 +78,7 @@ def image_upload(data, cookies):
         'category': "daily",
     }
     try:
-        response = requests.post(url, headers=headers, cookies=cookies, files=files).json()
+        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=300).json()
     except:
         response = None
     return response
@@ -85,12 +86,12 @@ def image_upload(data, cookies):
 def image_download(url):
     headers = {
         'Referer': "http://t.bilibili.com/",
-        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36",
     }
     content = []
     last_chunk_time = None
     try:
-        for chunk in requests.get(url, headers=headers, timeout=10, stream=True).iter_content(64 * 1024):
+        for chunk in requests.get(url, headers=headers, timeout=10, stream=True).iter_content(128 * 1024):
             if last_chunk_time is not None and time.time() - last_chunk_time > 5:
                 return None
             content.append(chunk)
@@ -125,9 +126,9 @@ def history_handle(args):
     history = read_history()
     if history:
         for index, meta_dict in enumerate(history.values()):
-            prefix = f"[{index}]"
-            print(f"{prefix} {meta_dict['filename']} ({meta_dict['size'] / 1024 / 1024:.2f} MB), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
-            print(f"{' ' * len(prefix)} {meta_string(meta_dict['url'])}")
+            prefix = f"[{index + 1}]"
+            print(f"{prefix} {meta_dict['filename']} ({size_string(meta_dict['size'])}), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+            print(f"{' ' * len(prefix)} META URL -> {meta_string(meta_dict['url'])}")
     else:
         print(f"暂无历史记录")
 
@@ -135,12 +136,12 @@ def info_handle(args):
     meta_dict = fetch_meta(args.meta)
     if meta_dict:
         print(f"文件名: {meta_dict['filename']}")
-        print(f"大小: {meta_dict['size'] / 1024 / 1024:.2f} MB")
+        print(f"大小: {size_string(meta_dict['size'])}")
         print(f"SHA-1: {meta_dict['sha1']}")
         print(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
         print(f"分块数: {len(meta_dict['block'])}")
         for index, block_dict in enumerate(meta_dict['block']):
-            print(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) URL: {block_dict['url']}")
+            print(f"分块{index + 1} ({size_string(block_dict['size'])}) URL: {block_dict['url']}")
     else:
         print("元数据解析失败")
 
@@ -159,14 +160,14 @@ def upload_handle(args):
             full_block_sha1 = calc_sha1(full_block, hexdigest=True)
             url = is_skippable(full_block_sha1)
             if url:
-                # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 已存在于服务器")
+                log(f"分块{index + 1}/{block_num}上传完毕")
                 block_dict[index] = {
                     'url': url,
                     'size': len(block),
                     'sha1': block_sha1,
                 }
             else:
-                # log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 开始上传")
+                # log(f"分块{index + 1}/{block_num}开始上传")
                 for _ in range(10):
                     if terminate_flag.is_set():
                         return
@@ -174,7 +175,7 @@ def upload_handle(args):
                     if response:
                         if response['code'] == 0:
                             url = response['data']['image_url']
-                            log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 上传完毕")
+                            log(f"分块{index + 1}/{block_num}上传完毕")
                             block_dict[index] = {
                                 'url': url,
                                 'size': len(block),
@@ -183,9 +184,9 @@ def upload_handle(args):
                             return
                         elif response['code'] == -4:
                             terminate_flag.set()
-                            log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败, 请重新登录")
+                            log(f"分块{index + 1}/{block_num}第{_ + 1}次上传失败, 请重新登录")
                             return
-                    log(f"分块{index} ({len(block) / 1024 / 1024:.2f} MB) 第{_ + 1}次上传失败")
+                    log(f"分块{index + 1}/{block_num}第{_ + 1}次上传失败")
                 else:
                     terminate_flag.set()
         except:
@@ -198,7 +199,7 @@ def upload_handle(args):
         url = default_url(sha1)
         headers = {
             'Referer': "http://t.bilibili.com/",
-            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36",
+            'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36",
         }
         for _ in range(5):
             try:
@@ -218,18 +219,18 @@ def upload_handle(args):
     start_time = time.time()
     file_name = args.file
     if not os.path.exists(file_name):
-        log(f"{file_name}不存在")
+        log(f"文件{file_name}不存在")
         return None
     if os.path.isdir(file_name):
-        log("不支持上传文件夹")
+        log("暂不支持上传文件夹")
         return None
-    log(f"上传: {os.path.basename(file_name)} ({os.path.getsize(file_name) / 1024 / 1024:.2f} MB)")
+    log(f"上传: {os.path.basename(file_name)} ({size_string(os.path.getsize(file_name))})")
     first_4mb_sha1 = calc_sha1(read_in_chunk(file_name, chunk_size=4 * 1024 * 1024, chunk_number=1), hexdigest=True)
     history = read_history()
     if first_4mb_sha1 in history:
         url = history[first_4mb_sha1]['url']
-        log(f"该文件已于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(history[first_4mb_sha1]['time']))}上传, 共有{len(history[first_4mb_sha1]['block'])}个分块")
-        log(meta_string(url))
+        log(f"文件已于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(history[first_4mb_sha1]['time']))}上传, 共有{len(history[first_4mb_sha1]['block'])}个分块")
+        log(f"META URL -> {meta_string(url)}")
         return url
     try:
         with open(os.path.join(bundle_dir, "cookies.json"), "r", encoding="utf-8") as f:
@@ -242,6 +243,7 @@ def upload_handle(args):
     terminate_flag = threading.Event()
     thread_pool = []
     block_dict = {}
+    block_num = math.ceil(os.path.getsize(file_name) / (args.block_size * 1024 * 1024))
     for index, block in enumerate(read_in_chunk(file_name, chunk_size=args.block_size * 1024 * 1024)):
         if len(thread_pool) >= args.thread:
             done_flag.acquire()
@@ -270,8 +272,8 @@ def upload_handle(args):
         if response and response['code'] == 0:
             url = response['data']['image_url']
             log("元数据上传完毕")
-            log(f"{os.path.basename(file_name)}上传完毕, 共有{len(meta_dict['block'])}个分块, 用时{int(time.time() - start_time)}秒, 平均速度{meta_dict['size'] / 1024 / 1024 / (time.time() - start_time):.2f} MB/s")
-            log(meta_string(url))
+            log(f"{meta_dict['filename']} ({size_string(meta_dict['size'])}) 上传完毕, 用时{time.time() - start_time:.1f}秒, 平均速度{size_string(meta_dict['size'] / (time.time() - start_time))}/s")
+            log(f"META URL -> {meta_string(url)}")
             write_history(first_4mb_sha1, meta_dict, url)
             return url
         log(f"元数据第{_ + 1}次上传失败")
@@ -281,7 +283,7 @@ def upload_handle(args):
 def download_handle(args):
     def core(index, block_dict):
         try:
-            # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 开始下载")
+            # log(f"分块{index + 1}/{len(meta_dict['block'])}开始下载")
             for _ in range(10):
                 if terminate_flag.is_set():
                     return
@@ -293,12 +295,12 @@ def download_handle(args):
                         f.seek(block_offset(index))
                         f.write(block)
                         file_lock.release()
-                        log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 下载完毕")
+                        log(f"分块{index + 1}/{len(meta_dict['block'])}下载完毕")
                         return
                     else:
-                        log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 校验未通过")
+                        log(f"分块{index + 1}/{len(meta_dict['block'])}校验未通过")
                 else:
-                    log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 第{_ + 1}次下载失败")
+                    log(f"分块{index + 1}/{len(meta_dict['block'])}第{_ + 1}次下载失败")
             else:
                 terminate_flag.set()
         except:
@@ -314,13 +316,13 @@ def download_handle(args):
         if args.force:
             return True
         else:
-            return (input(f"{os.path.basename(file_name)}已存在于本地, 是否覆盖? [y/N] ") in ["y", "Y"])
+            return (input("文件已存在, 是否覆盖? [y/N] ") in ["y", "Y"])
 
     start_time = time.time()
     meta_dict = fetch_meta(args.meta)
     if meta_dict:
         file_name = args.file if args.file else meta_dict['filename']
-        log(f"下载: {os.path.basename(file_name)} ({meta_dict['size'] / 1024 / 1024:.2f} MB), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+        log(f"下载: {os.path.basename(file_name)} ({size_string(meta_dict['size'])}), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
     else:
         log("元数据解析失败")
         return None
@@ -328,19 +330,19 @@ def download_handle(args):
     download_block_list = []
     if os.path.exists(file_name):
         if os.path.getsize(file_name) == meta_dict['size'] and calc_sha1(read_in_chunk(file_name), hexdigest=True) == meta_dict['sha1']:
-            log(f"{os.path.basename(file_name)}已存在于本地, 且与服务器端文件内容一致")
+            log("文件已存在, 且与服务器端内容一致")
             return file_name
         elif is_overwritable(file_name):
             with open(file_name, "rb") as f:
                 for index, block_dict in enumerate(meta_dict['block']):
                     f.seek(block_offset(index))
                     if calc_sha1(f.read(block_dict['size']), hexdigest=True) == block_dict['sha1']:
-                        # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 已存在于本地")
+                        # log(f"分块{index + 1}/{len(meta_dict['block'])}校验通过")
                         pass
                     else:
-                        # log(f"分块{index} ({block_dict['size'] / 1024 / 1024:.2f} MB) 需要重新下载")
+                        # log(f"分块{index + 1}/{len(meta_dict['block'])}校验未通过")
                         download_block_list.append(index)
-            log(f"{len(download_block_list)}个分块待下载")
+            log(f"{len(download_block_list)}/{len(meta_dict['block'])}个分块待下载")
         else:
             return None
     else:
@@ -364,18 +366,18 @@ def download_handle(args):
         if terminate_flag.is_set():
             return None
         f.truncate(sum(block['size'] for block in meta_dict['block']))
-    log(f"{os.path.basename(file_name)}下载完毕, 用时{int(time.time() - start_time)}秒, 平均速度{meta_dict['size'] / 1024 / 1024 / (time.time() - start_time):.2f} MB/s")
+    log(f"{os.path.basename(file_name)} ({size_string(meta_dict['size'])}) 下载完毕, 用时{time.time() - start_time:.1f}秒, 平均速度{size_string(meta_dict['size'] / (time.time() - start_time))}/s")
     sha1 = calc_sha1(read_in_chunk(file_name), hexdigest=True)
     if sha1 == meta_dict['sha1']:
-        log(f"{os.path.basename(file_name)}校验通过")
+        log("文件校验通过")
         return file_name
     else:
-        log(f"{os.path.basename(file_name)}校验未通过")
+        log("文件校验未通过")
         return None
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/11/30")
+    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/12/12")
     subparsers = parser.add_subparsers()
     history_parser = subparsers.add_parser("history", help="view upload history")
     history_parser.set_defaults(func=history_handle)

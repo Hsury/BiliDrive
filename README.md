@@ -7,7 +7,7 @@
 <h4 align="center">☁️ 哔哩哔哩云，支持任意文件的全速上传与下载 ☁️</h4>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.11.30-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.12.12-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 </p>
@@ -20,7 +20,7 @@
 
 - 轻量：无复杂依赖，资源占用少
 - 自由：无文件格式与大小限制，无容量限制
-- 安全：上传的文件需要通过生成的META地址才能访问，他人无法随意查看
+- 安全：上传的文件需要通过生成的META URL才能访问，他人无法随意查看
 - 稳定：带有分块校验与超时重试机制，在较差的网络环境中依然能确保文件的完整性
 - 快速：支持多线程传输与断点续传，同时借助B站的CDN资源，能最大化地利用网络环境进行上传与下载
 
@@ -52,14 +52,14 @@ file: 待上传的文件路径
 -t THREAD: 上传线程数, 默认值为4
 ```
 
-上传完毕后，终端会打印一串META地址（通常以`bdrive://`开头）用于下载或分享，请妥善保管
+上传完毕后，终端会打印一串META URL（通常以`bdrive://`开头）用于下载或分享，请妥善保管
 
 ### 下载
 
 ```
 drive.py download [-h] [-f] [-t THREAD] meta [file]
 
-meta: META地址(通常以bdrive://开头)
+meta: META URL(通常以bdrive://开头)
 file: 另存为新的文件名, 不指定则保存为上传时的文件名
 
 -f: 覆盖已有文件
@@ -73,7 +73,7 @@ file: 另存为新的文件名, 不指定则保存为上传时的文件名
 ```
 drive.py info [-h] meta
 
-meta: META地址(通常以bdrive://开头)
+meta: META URL(通常以bdrive://开头)
 ```
 
 ### 查看历史记录
@@ -106,7 +106,7 @@ drive.py history [-h]
 
 分块：10 MB * 1492
 
-META地址：bdrive://d28784bff1086450a6c331fb322accccd382228e
+META URL：bdrive://d28784bff1086450a6c331fb322accccd382228e
 
 ### 上传
 

@@ -14,7 +14,7 @@ class Bilibili:
 
     def __init__(self):
         self._session = requests.Session()
-        self._session.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.75 Safari/537.36"})
+        self._session.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36"})
         self.get_cookies = lambda: self._session.cookies.get_dict(domain=".bilibili.com")
         self.get_uid = lambda: self.get_cookies().get("DedeUserID", "")
         self.username = ""
@@ -82,7 +82,7 @@ class Bilibili:
         while True:
             key = get_key()
             key_hash, pub_key = key['key_hash'], key['pub_key']
-            url = f"https://passport.bilibili.com/api/v2/oauth2/login"
+            url = f"https://passport.bilibili.com/api/v3/oauth2/login"
             param = f"appkey={Bilibili.app_key}&password={parse.quote_plus(base64.b64encode(rsa.encrypt(f'{key_hash}{self.password}'.encode(), pub_key)))}&username={parse.quote_plus(self.username)}"
             payload = f"{param}&sign={self.calc_sign(param)}"
             headers = {'Content-type': "application/x-www-form-urlencoded"}
@@ -107,6 +107,9 @@ class Bilibili:
                             self._log(f"登录验证码识别服务暂时不可用, 10秒后重试")
                             time.sleep(10)
                             break
+                    elif response['code'] == -449:
+                        time.sleep(1)
+                        response = self._requests("post", url, data=payload, headers=headers)
                     elif response['code'] == 0 and response['data']['status'] == 0:
                         for cookie in response['data']['cookie_info']['cookies']:
                             self._session.cookies.set(cookie['name'], cookie['value'], domain=".bilibili.com")
