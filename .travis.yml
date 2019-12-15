@@ -39,7 +39,7 @@ install:
     - 'pip3 install -r requirements.txt'
     - 'pip3 install pyinstaller'
 script:
-    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python -m BiliDrive -V; else python3 -m BiliDrive -V; fi'
+    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python -m BiliDrive -v; else python3 -m BiliDrive -v; fi'
     - 'pyinstaller -F -n BiliDrive -i icon.ico BiliDrive/__main__.py'
     - 'mkdir -p release/BiliDrive'
     - 'cp {dist/*,LICENSE,README.md} release/BiliDrive'
