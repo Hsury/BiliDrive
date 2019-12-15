@@ -7,7 +7,7 @@
 <h4 align="center">☁️ 哔哩哔哩云，支持任意文件的全速上传与下载 ☁️</h4>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.12.12-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.12.16-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 </p>
@@ -30,12 +30,14 @@
 
 前往[发布页](https://github.com/Hsury/BiliDrive/releases/latest)获取可直接运行的二进制文件
 
-亦可[下载源代码](https://github.com/Hsury/BiliDrive/archive/master.zip)后使用Python 3.6或更高版本运行
+或使用Python软件包管理器pip从[PyPI仓库](https://pypi.org/project/BiliDrive/)安装
+
+亦可下载[源代码](https://github.com/Hsury/BiliDrive/archive/master.zip)后使用Python 3.6或更高版本运行
 
 ### 登录
 
 ```
-drive.py login [-h] username password
+python -m BiliDrive login [-h] username password
 
 username: Bilibili用户名
 password: Bilibili密码
@@ -44,7 +46,7 @@ password: Bilibili密码
 ### 上传
 
 ```
-drive.py upload [-h] [-b BLOCK_SIZE] [-t THREAD] file
+python -m BiliDrive upload [-h] [-b BLOCK_SIZE] [-t THREAD] file
 
 file: 待上传的文件路径
 
@@ -57,7 +59,7 @@ file: 待上传的文件路径
 ### 下载
 
 ```
-drive.py download [-h] [-f] [-t THREAD] meta [file]
+python -m BiliDrive download [-h] [-f] [-t THREAD] meta [file]
 
 meta: META URL(通常以bdrive://开头)
 file: 另存为新的文件名, 不指定则保存为上传时的文件名
@@ -71,7 +73,7 @@ file: 另存为新的文件名, 不指定则保存为上传时的文件名
 ### 查看文件元数据
 
 ```
-drive.py info [-h] meta
+python -m BiliDrive info [-h] meta
 
 meta: META URL(通常以bdrive://开头)
 ```
@@ -79,18 +81,14 @@ meta: META URL(通常以bdrive://开头)
 ### 查看历史记录
 
 ```
-drive.py history [-h]
+python -m BiliDrive history [-h]
 ```
 
 ### 交互模式
 
-交互模式主要为Windows普通用户设计，直接运行程序即可进入
+不传入任何命令行参数，直接运行程序即可进入交互模式
 
 该模式下，程序会打印命令提示符`BiliDrive > `，并等待用户输入命令
-
-执行`help`以获取可用命令
-
-执行`exit`以退出交互模式
 
 ## 技术实现
 

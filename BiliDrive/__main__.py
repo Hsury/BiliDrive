@@ -16,7 +16,10 @@ import threading
 import time
 import traceback
 import types
-from bilibili import Bilibili
+from BiliDrive import __version__
+from BiliDrive.bilibili import Bilibili
+
+log = Bilibili._log
 
 bundle_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
@@ -100,9 +103,6 @@ def image_download(url):
     except:
         return None
 
-def log(message):
-    Bilibili._log(message)
-
 def read_history():
     try:
         with open(os.path.join(bundle_dir, "history.json"), "r", encoding="utf-8") as f:
@@ -121,29 +121,6 @@ def read_in_chunk(file_name, chunk_size=16 * 1024 * 1024, chunk_number=-1):
                 chunk_counter += 1
             else:
                 return
-
-def history_handle(args):
-    history = read_history()
-    if history:
-        for index, meta_dict in enumerate(history.values()):
-            prefix = f"[{index + 1}]"
-            print(f"{prefix} {meta_dict['filename']} ({size_string(meta_dict['size'])}), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
-            print(f"{' ' * len(prefix)} META URL -> {meta_string(meta_dict['url'])}")
-    else:
-        print(f"暂无历史记录")
-
-def info_handle(args):
-    meta_dict = fetch_meta(args.meta)
-    if meta_dict:
-        print(f"文件名: {meta_dict['filename']}")
-        print(f"大小: {size_string(meta_dict['size'])}")
-        print(f"SHA-1: {meta_dict['sha1']}")
-        print(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
-        print(f"分块数: {len(meta_dict['block'])}")
-        for index, block_dict in enumerate(meta_dict['block']):
-            print(f"分块{index + 1} ({size_string(block_dict['size'])}) URL: {block_dict['url']}")
-    else:
-        print("元数据解析失败")
 
 def login_handle(args):
     bilibili = Bilibili()
@@ -375,18 +352,37 @@ def download_handle(args):
         log("文件校验未通过")
         return None
 
-if __name__ == "__main__":
+def info_handle(args):
+    meta_dict = fetch_meta(args.meta)
+    if meta_dict:
+        print(f"文件名: {meta_dict['filename']}")
+        print(f"大小: {size_string(meta_dict['size'])}")
+        print(f"SHA-1: {meta_dict['sha1']}")
+        print(f"上传时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+        print(f"分块数: {len(meta_dict['block'])}")
+        for index, block_dict in enumerate(meta_dict['block']):
+            print(f"分块{index + 1} ({size_string(block_dict['size'])}) URL: {block_dict['url']}")
+    else:
+        print("元数据解析失败")
+
+def history_handle(args):
+    history = read_history()
+    if history:
+        for index, meta_dict in enumerate(history.values()):
+            prefix = f"[{index + 1}]"
+            print(f"{prefix} {meta_dict['filename']} ({size_string(meta_dict['size'])}), 共有{len(meta_dict['block'])}个分块, 上传于{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(meta_dict['time']))}")
+            print(f"{' ' * len(prefix)} META URL -> {meta_string(meta_dict['url'])}")
+    else:
+        print(f"暂无历史记录")
+
+def main():
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(description="BiliDrive", epilog="By Hsury, 2019/12/12")
+    parser = argparse.ArgumentParser(prog="BiliDrive", description="Make Bilibili A Great Cloud Storage!", formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-v", "--version", action="version", version=f"BiliDrive version: {__version__}")
     subparsers = parser.add_subparsers()
-    history_parser = subparsers.add_parser("history", help="view upload history")
-    history_parser.set_defaults(func=history_handle)
-    info_parser = subparsers.add_parser("info", help="view meta info")
-    info_parser.add_argument("meta", help="meta url")
-    info_parser.set_defaults(func=info_handle)
     login_parser = subparsers.add_parser("login", help="log in to bilibili")
-    login_parser.add_argument("username", help="username")
-    login_parser.add_argument("password", help="password")
+    login_parser.add_argument("username", help="your bilibili username")
+    login_parser.add_argument("password", help="your bilibili password")
     login_parser.set_defaults(func=login_handle)
     upload_parser = subparsers.add_parser("upload", help="upload a file")
     upload_parser.add_argument("file", help="name of the file to upload")
@@ -399,20 +395,20 @@ if __name__ == "__main__":
     download_parser.add_argument("-f", "--force", action="store_true", help="force to overwrite if file exists")
     download_parser.add_argument("-t", "--thread", default=8, type=int, help="download thread number")
     download_parser.set_defaults(func=download_handle)
+    info_parser = subparsers.add_parser("info", help="show meta info")
+    info_parser.add_argument("meta", help="meta url")
+    info_parser.set_defaults(func=info_handle)
+    history_parser = subparsers.add_parser("history", help="show upload history")
+    history_parser.set_defaults(func=history_handle)
     shell = False
     while True:
         if shell:
             args = shlex.split(input("BiliDrive > "))
-            if args == ["exit"]:
-                break
-            elif args == ["help"]:
-                parser.print_help()
-            else:
-                try:
-                    args = parser.parse_args(args)
-                    args.func(args)
-                except:
-                    pass
+            try:
+                args = parser.parse_args(args)
+                args.func(args)
+            except:
+                pass
         else:
             args = parser.parse_args()
             try:
@@ -420,3 +416,10 @@ if __name__ == "__main__":
                 break
             except AttributeError:
                 shell = True
+                subparsers.add_parser("help", help="show this help message").set_defaults(func=lambda _: parser.parse_args(["--help"]).func())
+                subparsers.add_parser("version", help="show program's version number").set_defaults(func=lambda _: parser.parse_args(["--version"]).func())
+                subparsers.add_parser("exit", help="exit program").set_defaults(func=lambda _: os._exit(0))
+                parser.print_help()
+
+if __name__ == "__main__":
+    main()

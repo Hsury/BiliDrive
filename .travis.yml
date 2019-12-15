@@ -1,7 +1,7 @@
 if: 'tag IS blank'
 env:
     global:
-        - TRAVIS_TAG=v1.6
+        - TRAVIS_TAG=v1.7
 jobs:
     include:
         -
@@ -39,15 +39,25 @@ install:
     - 'pip3 install -r requirements.txt'
     - 'pip3 install pyinstaller'
 script:
-    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python drive.py -h; else python3 drive.py -h; fi'
-    - 'pyinstaller -F -n BiliDrive -i icon.ico drive.py'
+    - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then python -m BiliDrive -V; else python3 -m BiliDrive -V; fi'
+    - 'pyinstaller -F -n BiliDrive -i icon.ico BiliDrive/__main__.py'
     - 'mkdir -p release/BiliDrive'
     - 'cp {dist/*,LICENSE,README.md} release/BiliDrive'
     - 'cd release'
     - 'if [ "$TRAVIS_OS_NAME" = "windows" ]; then 7z a -tzip $RELEASE_FILENAME BiliDrive; elif [ "$TRAVIS_OS_NAME" = "osx" ]; then zip -r $RELEASE_FILENAME BiliDrive; else tar -czvf $RELEASE_FILENAME BiliDrive; fi'
+    - 'cd ..'
 deploy:
-    provider: releases
-    api_key: $GITHUB_OAUTH_TOKEN
-    file: $RELEASE_FILENAME
-    overwrite: true
-    skip_cleanup: true
+    -
+        provider: releases
+        api_key: $GITHUB_OAUTH_TOKEN
+        file: release/$RELEASE_FILENAME
+        overwrite: true
+        skip_cleanup: true
+    -
+        provider: pypi
+        user: __token__
+        password: $PYPI_API_TOKEN
+        distributions: 'sdist bdist_wheel'
+        skip_existing: true
+        on:
+            condition: ['$TRAVIS_OS_NAME = linux', '$TRAVIS_CPU_ARCH = amd64']
