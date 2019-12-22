@@ -1,7 +1,7 @@
 if: 'tag IS blank'
 env:
     global:
-        - TRAVIS_TAG=v1.7
+        - TRAVIS_TAG=v1.8
 jobs:
     include:
         -

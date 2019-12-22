@@ -7,7 +7,7 @@
 <h4 align="center">☁️ 哔哩哔哩云，支持任意文件的全速上传与下载 ☁️</h4>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-2019.12.16-green.svg?longCache=true&style=for-the-badge">
+<img src="https://img.shields.io/badge/version-2019.12.22-green.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/badge/license-SATA-blue.svg?longCache=true&style=for-the-badge">
 <img src="https://img.shields.io/travis/com/Hsury/BiliDrive?style=for-the-badge">
 </p>
