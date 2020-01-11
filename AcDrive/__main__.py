@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import base64
 import hashlib
 import json
 import math
@@ -16,16 +17,18 @@ import threading
 import time
 import traceback
 import types
-from BiliDrive import __version__
-from BiliDrive.bilibili import Bilibili
+from AcDrive import __version__
 
-log = Bilibili._log
-
+image_domain = 'https://imgs.aixifan.com/'
 bundle_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 
-default_url = lambda sha1: f"http://i0.hdslb.com/bfs/album/{sha1}.x-ms-bmp"
-meta_string = lambda url: ("bdrive://" + re.findall(r"[a-fA-F0-9]{40}", url)[0]) if re.match(r"^http(s?)://i0.hdslb.com/bfs/album/[a-fA-F0-9]{40}.x-ms-bmp$", url) else url
+default_url = lambda sha1: f"https://imgs.aixifan.com/bfs/album/{sha1}.bmp"
+meta_string = lambda url: ("adrive://" + re.findall(r"[a-fA-F0-9]{40}", url)[0]) if re.match(r"^http(s?)://imgs.aixifan.com/bfs/album/[a-fA-F0-9]{40}.bmp$", url) else url
 size_string = lambda byte: f"{byte / 1024 / 1024 / 1024:.2f} GB" if byte > 1024 * 1024 * 1024 else f"{byte / 1024 / 1024:.2f} MB" if byte > 1024 * 1024 else f"{byte / 1024:.2f} KB" if byte > 1024 else f"{int(byte)} B"
+
+def log(message):
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}] {message}")
+
 
 def bmp_header(data):
     return b"BM" \
@@ -56,7 +59,7 @@ def calc_sha1(data, hexdigest=False):
     return sha1.hexdigest() if hexdigest else sha1.digest()
 
 def fetch_meta(string):
-    if re.match(r"^bdrive://[a-fA-F0-9]{40}$", string) or re.match(r"^[a-fA-F0-9]{40}$", string):
+    if re.match(r"^adrive://[a-fA-F0-9]{40}$", string) or re.match(r"^[a-fA-F0-9]{40}$", string):
         full_meta = image_download(default_url(re.findall(r"[a-fA-F0-9]{40}", string)[0]))
     elif string.startswith("http://") or string.startswith("https://"):
         full_meta = image_download(string)
@@ -68,21 +71,40 @@ def fetch_meta(string):
     except:
         return None
 
-def image_upload(data, cookies):
-    url = "https://api.vc.bilibili.com/api/v1/drawImage/upload"
+def get_up_token(cookies):
+    r = requests.get(
+        url = 'https://www.acfun.cn/v2/user/content/upToken',
+        cookies = cookies,
+        headers = {
+            'devicetype': '7',
+            'Referer': "https://t.bilibili.com/",
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36'
+        }
+    )
+    return base64.b64decode(r.json()['vdata']['uptoken']).decode("utf-8").replace("null:", "")
+
+def image_upload(data, cookies, sha1):
+    url = "https://upload.qiniup.com/"
     headers = {
         'Origin': "https://t.bilibili.com",
         'Referer': "https://t.bilibili.com/",
         'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36",
     }
+    postdata = {
+        'token': get_up_token(cookies),
+        'id': 'WU_FILE_0',
+        'name': f'{sha1}.bmp',
+        'type': 'image/bmp',
+        'size': len(data),
+        'key': f'bfs/album/{sha1}.bmp'
+    }
     files = {
-        'file_up': (f"{int(time.time() * 1000)}.bmp", data),
-        'biz': "draw",
-        'category': "daily",
+        'file': (f"{sha1}.bmp", data),
     }
     try:
-        response = requests.post(url, headers=headers, cookies=cookies, files=files, timeout=300).json()
+        response = requests.post(url, headers=headers, data=postdata, cookies=cookies, files=files, timeout=300).json()
     except:
+        traceback.print_exc()
         response = None
     return response
 
@@ -123,11 +145,20 @@ def read_in_chunk(file_name, chunk_size=16 * 1024 * 1024, chunk_number=-1):
                 return
 
 def login_handle(args):
-    bilibili = Bilibili()
-    if bilibili.login(username=args.username, password=args.password):
-        bilibili.get_user_info()
+    s = requests.session()
+    r = s.post(
+        url = 'https://id.app.acfun.cn/rest/web/login/signin',
+        data = {
+            'username': args.username,
+            'password': args.password,
+            'key': '',
+            'captcha': ''
+        }
+    )
+    if r.json()['result'] == 0:
+        log('登陆成功')
         with open(os.path.join(bundle_dir, "cookies.json"), "w", encoding="utf-8") as f:
-            f.write(json.dumps(bilibili.get_cookies(), ensure_ascii=False, indent=2))
+            f.write(json.dumps(s.cookies.get_dict(), ensure_ascii=False, indent=2))
 
 def upload_handle(args):
     def core(index, block):
@@ -137,7 +168,7 @@ def upload_handle(args):
             full_block_sha1 = calc_sha1(full_block, hexdigest=True)
             url = is_skippable(full_block_sha1)
             if url:
-                log(f"分块{index + 1}/{block_num}上传完毕")
+                log(f"分块{index + 1}/{block_num}秒传完毕")
                 block_dict[index] = {
                     'url': url,
                     'size': len(block),
@@ -148,21 +179,21 @@ def upload_handle(args):
                 for _ in range(10):
                     if terminate_flag.is_set():
                         return
-                    response = image_upload(full_block, cookies)
-                    if response:
-                        if response['code'] == 0:
-                            url = response['data']['image_url']
-                            log(f"分块{index + 1}/{block_num}上传完毕")
-                            block_dict[index] = {
-                                'url': url,
-                                'size': len(block),
-                                'sha1': block_sha1,
-                            }
-                            return
-                        elif response['code'] == -4:
-                            terminate_flag.set()
-                            log(f"分块{index + 1}/{block_num}第{_ + 1}次上传失败, 请重新登录")
-                            return
+                    response = image_upload(full_block, cookies, full_block_sha1)
+                    if response and 'key' in response:
+                        url = image_domain + response['key']
+                        log(f"分块{index + 1}/{block_num}上传完毕")
+                        block_dict[index] = {
+                            'url': url,
+                            'size': len(block),
+                            'sha1': block_sha1,
+                        }
+                        return
+                    else:
+                        terminate_flag.set()
+                        log(f"分块{index + 1}/{block_num}第{_ + 1}次上传失败, 请重新登录")
+                        log(response)
+                        return
                     log(f"分块{index + 1}/{block_num}第{_ + 1}次上传失败")
                 else:
                     terminate_flag.set()
@@ -245,9 +276,9 @@ def upload_handle(args):
     meta = json.dumps(meta_dict, ensure_ascii=False).encode("utf-8")
     full_meta = bmp_header(meta) + meta
     for _ in range(10):
-        response = image_upload(full_meta, cookies)
-        if response and response['code'] == 0:
-            url = response['data']['image_url']
+        response = image_upload(full_meta, cookies, calc_sha1(full_meta, hexdigest=True))
+        if response and 'key' in response:
+            url = image_domain + response['key']
             log("元数据上传完毕")
             log(f"{meta_dict['filename']} ({size_string(meta_dict['size'])}) 上传完毕, 用时{time.time() - start_time:.1f}秒, 平均速度{size_string(meta_dict['size'] / (time.time() - start_time))}/s")
             log(f"META URL -> {meta_string(url)}")
@@ -377,12 +408,12 @@ def history_handle(args):
 
 def main():
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(os.getpid(), 9))
-    parser = argparse.ArgumentParser(prog="BiliDrive", description="Make Bilibili A Great Cloud Storage!", formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("-v", "--version", action="version", version=f"BiliDrive version: {__version__}")
+    parser = argparse.ArgumentParser(prog="AcDrive", description="Make AcFun A Great Cloud Storage!", formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-v", "--version", action="version", version=f"AcDrive version: {__version__}")
     subparsers = parser.add_subparsers()
-    login_parser = subparsers.add_parser("login", help="log in to bilibili")
-    login_parser.add_argument("username", help="your bilibili username")
-    login_parser.add_argument("password", help="your bilibili password")
+    login_parser = subparsers.add_parser("login", help="log in to AcFun")
+    login_parser.add_argument("username", help="your AcFun username")
+    login_parser.add_argument("password", help="your AcFun password")
     login_parser.set_defaults(func=login_handle)
     upload_parser = subparsers.add_parser("upload", help="upload a file")
     upload_parser.add_argument("file", help="name of the file to upload")
@@ -403,7 +434,7 @@ def main():
     shell = False
     while True:
         if shell:
-            args = shlex.split(input("BiliDrive > "))
+            args = shlex.split(input("AcDrive > "))
             try:
                 args = parser.parse_args(args)
                 args.func(args)
